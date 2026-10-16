@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROMETHEUS_VERSION: "3.15.0"
+  ALERTMANAGER_VERSION: "0.34.0"
+  ALLOY_VERSION: "1.20.0"
+  KUSTOMIZE_VERSION: "5.8.3"
+  KUBECONFORM_VERSION: "0.8.0"
+
+jobs:
+  validate:
+    name: Rules, routing, pipeline, dashboards, manifests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: yamllint
+        run: pipx run yamllint -c .yamllint.yaml --format github .
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Install promtool, amtool, alloy, kustomize, kubeconform
+        run: |
+          bin="$HOME/bin"; mkdir -p "$bin"; cd "$(mktemp -d)"
+          gh="https://github.com"
+
+          curl -sSfL "$gh/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C "$bin" "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          curl -sSfL "$gh/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/alertmanager-${ALERTMANAGER_VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C "$bin" "alertmanager-${ALERTMANAGER_VERSION}.linux-amd64/amtool"
+          curl -sSfLo alloy.zip "$gh/grafana/alloy/releases/download/v${ALLOY_VERSION}/alloy-linux-amd64.zip"
+          unzip -q alloy.zip && install alloy-linux-amd64 "$bin/alloy"
+          curl -sSfL "$gh/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C "$bin" kustomize
+          curl -sSfL "$gh/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C "$bin" kubeconform
+
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Validate everything
+        run: ./hack/validate.sh
