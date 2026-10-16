@@ -1,0 +1,75 @@
+// Collect logs from every pod on this node and ship them to Loki.
+// Runs as a DaemonSet; each instance only watches pods scheduled on its own
+// node (NODE_NAME comes from the downward API), so nothing is collected twice.
+
+discovery.kubernetes "pods" {
+	role = "pod"
+
+	selectors {
+		role  = "pod"
+		field = "spec.nodeName=" + sys.env("NODE_NAME")
+	}
+}
+
+discovery.relabel "pods" {
+	targets = discovery.kubernetes.pods.targets
+
+	rule {
+		source_labels = ["__meta_kubernetes_namespace"]
+		target_label  = "namespace"
+	}
+
+	rule {
+		source_labels = ["__meta_kubernetes_pod_name"]
+		target_label  = "pod"
+	}
+
+	rule {
+		source_labels = ["__meta_kubernetes_pod_container_name"]
+		target_label  = "container"
+	}
+
+	rule {
+		source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app"]
+		separator     = ""
+		target_label  = "app"
+	}
+
+	rule {
+		source_labels = ["__meta_kubernetes_pod_node_name"]
+		target_label  = "node"
+	}
+}
+
+loki.source.kubernetes "pods" {
+	targets    = discovery.relabel.pods.output
+	forward_to = [loki.process.pods.receiver]
+}
+
+loki.process "pods" {
+	// Promote the log level of JSON logs to a label so queries like
+	// {namespace="shop", level="error"} work. Plain-text lines pass through.
+	stage.match {
+		selector = "{namespace=~\".+\"} |~ \"^\\\\s*\\\\{\""
+
+		stage.json {
+			expressions = {level = "level"}
+		}
+
+		stage.labels {
+			values = {level = ""}
+		}
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+	}
+
+	external_labels = {
+		cluster = sys.env("CLUSTER_NAME"),
+	}
+}
