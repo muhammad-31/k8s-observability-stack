@@ -1,0 +1,87 @@
+# Argo CD: the three upstream charts (values from this repo) plus this repo's
+# own rules, dashboards, monitors and Alertmanager routing.
+# kubectl apply -f argocd/observability-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - name: kube-prometheus-stack
+            repoURL: https://prometheus-community.github.io/helm-charts
+            version: 92.9.0
+          - name: loki
+            repoURL: https://grafana-community.github.io/helm-charts
+            version: 18.16.1
+          - name: alloy
+            repoURL: https://grafana.github.io/helm-charts
+            version: 1.13.0
+  template:
+    metadata:
+      name: "{{ .name }}"
+      labels:
+        layer: observability
+    spec:
+      project: default
+      sources:
+        - repoURL: "{{ .repoURL }}"
+          chart: "{{ .name }}"
+          targetRevision: "{{ .version }}"
+          helm:
+            releaseName: "{{ .name }}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $values/values/{{ .name }}.yaml
+              - $values/values/{{ .name }}-dev.yaml
+        - repoURL: https://github.com/muhammad-31/k8s-observability-stack.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: monitoring
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 10
+          backoff:
+            duration: 15s
+            factor: 2
+            maxDuration: 5m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/muhammad-31/k8s-observability-stack.git
+    targetRevision: main
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # PrometheusRule / PodMonitor CRDs arrive with kube-prometheus-stack.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m

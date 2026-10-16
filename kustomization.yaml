@@ -1,0 +1,40 @@
+# Everything this repository adds on top of the Helm charts:
+#   kustomize build . | kubectl apply -f -   (or let Argo CD sync it)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+
+resources:
+  - rules/slo-availability.yaml
+  - rules/platform.yaml
+  - monitors/podinfo.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  # Routing only; receiver credentials live in the alertmanager-receivers Secret.
+  - name: alertmanager-config
+    files:
+      - alertmanager.yaml=alertmanager/alertmanager.yaml
+
+configMapGenerator:
+  - name: alloy-config
+    files:
+      - config.alloy=alloy/config.alloy
+  - name: dashboard-slo-overview
+    files:
+      - slo-overview.json=dashboards/slo-overview.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: SLOs
+  - name: dashboard-workload-overview
+    files:
+      - workload-overview.json=dashboards/workload-overview.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: Kubernetes

@@ -1,0 +1,19 @@
+# Scrapes the sample app from gitops-argocd-platform. Copy this per service.
+# podinfo serves Prometheus metrics on its main HTTP port at /metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: podinfo
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [podinfo]
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: podinfo
+  # Use the release name as the job label, so SLO series read job="podinfo".
+  jobLabel: app.kubernetes.io/instance
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
