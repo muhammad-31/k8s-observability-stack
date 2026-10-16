@@ -1,0 +1,97 @@
+# Alerts that kube-prometheus-stack's default rules do not cover, for the
+# components this platform runs (cert-manager, Argo CD, Kyverno) and for
+# OOM kills, which the defaults only surface indirectly as restarts.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: workloads
+      rules:
+        - alert: ContainerOOMKilled
+          expr: |
+            (
+              increase(kube_pod_container_status_restarts_total[15m]) > 0
+            )
+            and on (namespace, pod, container)
+            (
+              kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+            )
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) was OOM-killed"
+            description: >-
+              The container exceeded its memory limit and was restarted in the last 15 minutes.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ContainerOOMKilled.md
+
+    - name: cert-manager
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: |
+            (certmanager_certificate_expiration_timestamp_seconds - time()) < 14 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }}"
+            description: >-
+              cert-manager normally renews 30 days before expiry, so a certificate this
+              close to expiring means renewal is failing.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/CertificateExpiringSoon.md
+
+        - alert: CertificateNotReady
+          expr: |
+            max by (namespace, name) (certmanager_certificate_ready_status{condition="False"}) == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} is not ready"
+            description: Issuance or renewal has been failing for 30 minutes.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/CertificateExpiringSoon.md
+
+    - name: argocd
+      rules:
+        - alert: ArgoCDAppOutOfSync
+          expr: |
+            max by (name, project, dest_namespace) (argocd_app_info{sync_status!="Synced"}) == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD application {{ $labels.name }} has been out of sync for 30m"
+            description: The cluster no longer matches Git and auto-sync has not fixed it.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ArgoCDApp.md
+
+        - alert: ArgoCDAppDegraded
+          expr: |
+            max by (name, project, dest_namespace) (argocd_app_info{health_status="Degraded"}) == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Argo CD application {{ $labels.name }} is Degraded"
+            description: At least one resource of the application is unhealthy.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ArgoCDApp.md
+
+    - name: kyverno
+      rules:
+        - alert: KyvernoPolicyViolations
+          expr: |
+            sum by (policy_name, resource_namespace) (
+              increase(kyverno_policy_results_total{rule_result="fail"}[1h])
+            ) > 0
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Policy {{ $labels.policy_name }} fails in {{ $labels.resource_namespace }}"
+            description: >-
+              Resources are violating a Kyverno policy. In Audit mode this does not block
+              anything yet, but the same change would be rejected in an Enforce cluster.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/KyvernoPolicyViolations.md

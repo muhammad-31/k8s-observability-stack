@@ -1,0 +1,114 @@
+# Availability SLO for HTTP services, alerted with multi-window, multi-burn-rate
+# alerts (Google SRE workbook, chapter 5). Works for any service that exports
+# http_request_duration_seconds_count{status=...}; podinfo does out of the box.
+#
+# SLO: 99.9% of requests succeed over 30 days -> error budget = 0.1%.
+#   page:   2% of the monthly budget burned in 1h  (burn rate 14.4, 1h + 5m windows)
+#           5% burned in 6h                        (burn rate 6,    6h + 30m windows)
+#   ticket: 10% burned in 3d                       (burn rate 1,    3d + 6h windows)
+#           and burn rate 3 over 1d + 2h
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo-availability
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    # Recording and alerting rules share one group on purpose: rules in a group
+    # run in order, so the alerts always read the ratios computed in the same
+    # evaluation instead of racing a separate group.
+    - name: slo-availability
+      rules:
+        - record: slo:http_errors:ratio_rate5m
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[5m]))
+        - record: slo:http_errors:ratio_rate30m
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[30m]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[30m]))
+        - record: slo:http_errors:ratio_rate1h
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[1h]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[1h]))
+        - record: slo:http_errors:ratio_rate2h
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[2h]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[2h]))
+        - record: slo:http_errors:ratio_rate6h
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[6h]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[6h]))
+        - record: slo:http_errors:ratio_rate1d
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[1d]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[1d]))
+        - record: slo:http_errors:ratio_rate3d
+          expr: |
+            sum by (namespace, job) (rate(http_request_duration_seconds_count{status=~"5.."}[3d]))
+            /
+            sum by (namespace, job) (rate(http_request_duration_seconds_count[3d]))
+        # Fraction of the 30-day error budget still left (1 = untouched, <0 = blown).
+        - record: slo:http_error_budget:remaining_ratio30d
+          expr: |
+            1 - (
+              sum by (namespace, job) (increase(http_request_duration_seconds_count{status=~"5.."}[30d]))
+              /
+              sum by (namespace, job) (increase(http_request_duration_seconds_count[30d]))
+            ) / 0.001
+
+        - alert: ErrorBudgetBurnFast
+          expr: |
+            (
+              slo:http_errors:ratio_rate1h > (14.4 * 0.001)
+              and
+              slo:http_errors:ratio_rate5m > (14.4 * 0.001)
+            )
+            or
+            (
+              slo:http_errors:ratio_rate6h > (6 * 0.001)
+              and
+              slo:http_errors:ratio_rate30m > (6 * 0.001)
+            )
+          for: 2m
+          labels:
+            severity: page
+            slo: availability-99.9
+          annotations:
+            summary: "{{ $labels.job }} in {{ $labels.namespace }} is burning its error budget fast"
+            description: >-
+              At this error rate the 30-day error budget is gone in less than two days.
+              Error ratio over the long alert window: {{ $value | humanizePercentage }}.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ErrorBudgetBurn.md
+
+        - alert: ErrorBudgetBurnSlow
+          expr: |
+            (
+              slo:http_errors:ratio_rate1d > (3 * 0.001)
+              and
+              slo:http_errors:ratio_rate2h > (3 * 0.001)
+            )
+            or
+            (
+              slo:http_errors:ratio_rate3d > (1 * 0.001)
+              and
+              slo:http_errors:ratio_rate6h > (1 * 0.001)
+            )
+          for: 15m
+          labels:
+            severity: ticket
+            slo: availability-99.9
+          annotations:
+            summary: "{{ $labels.job }} in {{ $labels.namespace }} is slowly burning its error budget"
+            description: >-
+              Errors are above the SLO for hours. No emergency yet, but the monthly
+              budget will run out before the window ends if this continues.
+            runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ErrorBudgetBurn.md

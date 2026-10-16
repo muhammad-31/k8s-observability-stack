@@ -1,0 +1,137 @@
+rule_files:
+  - ../../build/rules/platform.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - name: OOM-killed container alerts, a normal restart does not
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="shop", pod="api-7d9f", container="api"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="shop", pod="api-7d9f", container="api", reason="OOMKilled"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1'
+      - series: 'kube_pod_container_status_restarts_total{namespace="shop", pod="worker-5c2a", container="worker"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="shop", pod="worker-5c2a", container="worker", reason="Error"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ContainerOOMKilled
+        exp_alerts:
+          - exp_labels:
+              namespace: shop
+              pod: api-7d9f
+              container: api
+              severity: warning
+            exp_annotations:
+              summary: "shop/api-7d9f (api) was OOM-killed"
+              description: "The container exceeded its memory limit and was restarted in the last 15 minutes."
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ContainerOOMKilled.md
+
+  - name: certificates close to expiry alert, healthy ones do not
+    interval: 1m
+    input_series:
+      # expires 7 days after the test starts
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="shop", name="api-tls"}'
+        values: '604800x120'
+      # expires in 60 days
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="shop", name="www-tls"}'
+        values: '5184000x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              namespace: shop
+              name: api-tls
+              severity: warning
+            exp_annotations:
+              summary: "Certificate shop/api-tls expires in 6d 22h 30m 0s"
+              description: >-
+                cert-manager normally renews 30 days before expiry, so a certificate this close to
+                expiring means renewal is failing.
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/CertificateExpiringSoon.md
+
+  - name: certificate stuck in not-ready
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_ready_status{namespace="shop", name="api-tls", condition="False"}'
+        values: '1x60'
+      - series: 'certmanager_certificate_ready_status{namespace="shop", name="api-tls", condition="True"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateNotReady
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: CertificateNotReady
+        exp_alerts:
+          - exp_labels:
+              namespace: shop
+              name: api-tls
+              severity: warning
+            exp_annotations:
+              summary: "Certificate shop/api-tls is not ready"
+              description: "Issuance or renewal has been failing for 30 minutes."
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/CertificateExpiringSoon.md
+
+  - name: Argo CD application degraded and out of sync
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="podinfo", project="apps", dest_namespace="podinfo", health_status="Degraded", sync_status="Synced"}'
+        values: '1x60'
+      - series: 'argocd_app_info{name="billing", project="apps", dest_namespace="billing", health_status="Healthy", sync_status="OutOfSync"}'
+        values: '1x60'
+      - series: 'argocd_app_info{name="kyverno", project="platform", dest_namespace="kyverno", health_status="Healthy", sync_status="Synced"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ArgoCDAppDegraded
+        exp_alerts:
+          - exp_labels:
+              name: podinfo
+              project: apps
+              dest_namespace: podinfo
+              severity: critical
+            exp_annotations:
+              summary: "Argo CD application podinfo is Degraded"
+              description: "At least one resource of the application is unhealthy."
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ArgoCDApp.md
+      - eval_time: 15m
+        alertname: ArgoCDAppOutOfSync
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: ArgoCDAppOutOfSync
+        exp_alerts:
+          - exp_labels:
+              name: billing
+              project: apps
+              dest_namespace: billing
+              severity: warning
+            exp_annotations:
+              summary: "Argo CD application billing has been out of sync for 30m"
+              description: "The cluster no longer matches Git and auto-sync has not fixed it."
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ArgoCDApp.md
+
+  - name: Kyverno policy failures open a ticket
+    interval: 1m
+    input_series:
+      - series: 'kyverno_policy_results_total{policy_name="disallow-latest-tag", resource_namespace="shop", rule_result="fail"}'
+        values: '0+1x60'
+      - series: 'kyverno_policy_results_total{policy_name="require-probes", resource_namespace="shop", rule_result="pass"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: KyvernoPolicyViolations
+        exp_alerts:
+          - exp_labels:
+              policy_name: disallow-latest-tag
+              resource_namespace: shop
+              severity: ticket
+            exp_annotations:
+              summary: "Policy disallow-latest-tag fails in shop"
+              description: >-
+                Resources are violating a Kyverno policy. In Audit mode this does not block anything yet,
+                but the same change would be rejected in an Enforce cluster.
+              runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/KyvernoPolicyViolations.md
