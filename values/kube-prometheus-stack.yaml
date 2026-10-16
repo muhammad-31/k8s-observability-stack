@@ -1,0 +1,95 @@
+# Prometheus Operator, Prometheus, Alertmanager, Grafana, node-exporter and
+# kube-state-metrics. Rules, dashboards and Alertmanager routing come from
+# this repository (see kustomization.yaml), not from these values.
+
+# Managed control planes (EKS, GKE, AKS) do not expose these to scrape.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 45GB
+    externalLabels:
+      cluster: dev
+    # Discover monitors and rules in every namespace, not only objects that
+    # carry this Helm release's label. Teams ship a ServiceMonitor next to
+    # their app and it just works.
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 50Gi
+
+alertmanager:
+  alertmanagerSpec:
+    # Routing comes from alertmanager/alertmanager.yaml (tested with amtool),
+    # rendered into this Secret by the root Kustomization.
+    useExistingSecret: true
+    configSecret: alertmanager-config
+    # Receiver credentials (Slack webhook, PagerDuty key, dead man's switch
+    # URL). Create it with External Secrets or kubectl; see README.
+    secrets:
+      - alertmanager-receivers
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 2Gi
+
+grafana:
+  defaultDashboardsTimezone: utc
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData:
+        maxLines: 1000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

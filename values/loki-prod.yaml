@@ -1,0 +1,32 @@
+# prod: chunks and indexes in S3 instead of the pod's disk. Grant access with
+# IRSA / EKS Pod Identity on the service account; no static keys.
+loki:
+  storage:
+    type: s3
+    bucketNames:
+      chunks: CHANGE-ME-loki-chunks
+      ruler: CHANGE-ME-loki-ruler
+    s3:
+      region: us-east-1
+  schemaConfig:
+    configs:
+      - from: "2026-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  limits_config:
+    retention_period: 720h
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/loki-s3
+
+singleBinary:
+  persistence:
+    size: 50Gi
