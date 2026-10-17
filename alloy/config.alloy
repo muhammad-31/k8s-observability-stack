@@ -29,9 +29,11 @@ discovery.relabel "pods" {
 		target_label  = "container"
 	}
 
+	// First non-empty of app.kubernetes.io/name and app, never both concatenated.
 	rule {
 		source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app"]
-		separator     = ""
+		separator     = ";"
+		regex         = "^;*([^;]+).*$"
 		target_label  = "app"
 	}
 

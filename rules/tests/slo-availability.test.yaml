@@ -45,7 +45,7 @@ tests:
             exp_annotations:
               summary: "podinfo in shop is burning its error budget fast"
               description: >-
-                At this error rate the 30-day error budget is gone in less than two days.
+                At this error rate the 30-day error budget is gone in two to five days.
                 Error ratio over the long alert window: 20%.
               runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ErrorBudgetBurn.md
 
@@ -92,7 +92,7 @@ tests:
               slo: availability-99.9
             exp_annotations:
               summary: "podinfo in shop is burning its error budget fast"
-              description: "At this error rate the 30-day error budget is gone in less than two days. Error ratio over the long alert window: 8.345%."
+              description: "At this error rate the 30-day error budget is gone in two to five days. Error ratio over the long alert window: 8.345%."
               runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ErrorBudgetBurn.md
       # The short windows (5m, 30m) stop the alert from firing for hours after
       # the incident is over, even though the long windows still show errors.

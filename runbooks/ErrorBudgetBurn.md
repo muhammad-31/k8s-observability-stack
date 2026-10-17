@@ -26,7 +26,7 @@
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| Errors started right after a deploy | Bad release | Roll back: revert the commit in Git (Argo CD syncs it) or `kubectl rollout undo` in an emergency. |
+| Errors started right after a deploy | Bad release | Roll back: revert the commit in Git and let Argo CD sync it. In an emergency, first turn off auto-sync (`argocd app set <app> --sync-policy none`), otherwise self-heal reverts a `kubectl rollout undo`. |
 | 503s, pods restarting | Readiness failing, OOM kills | Check the **Workload overview** dashboard and `kubectl describe pod`. |
 | 502/504s, latency spike | Slow dependency (database, external API) | Check the dependency's dashboard; consider shedding load or scaling. |
 | Errors only on some pods | One bad node or zone | `kubectl get pods -o wide`, cordon the node. |

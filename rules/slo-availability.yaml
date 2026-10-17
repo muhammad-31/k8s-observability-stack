@@ -85,7 +85,7 @@ spec:
           annotations:
             summary: "{{ $labels.job }} in {{ $labels.namespace }} is burning its error budget fast"
             description: >-
-              At this error rate the 30-day error budget is gone in less than two days.
+              At this error rate the 30-day error budget is gone in two to five days.
               Error ratio over the long alert window: {{ $value | humanizePercentage }}.
             runbook_url: https://github.com/muhammad-31/k8s-observability-stack/blob/main/runbooks/ErrorBudgetBurn.md
 

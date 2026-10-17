@@ -1,0 +1,51 @@
+# Scrape targets for the platform alerts in rules/platform.yaml. The charts in
+# gitops-argocd-platform expose these ports by default; nothing to enable there.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cert-manager
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [cert-manager]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/component: controller
+  # certmanager_certificate_* series
+  podMetricsEndpoints:
+    - port: http-metrics
+      interval: 60s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: argocd-application-controller
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [argocd]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-application-controller
+  # argocd_app_info (sync and health status per Application)
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 60s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kyverno
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [kyverno]
+  # All Kyverno controllers; the admission and reports controllers both
+  # export kyverno_policy_results_total.
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: kyverno
+  podMetricsEndpoints:
+    - port: metrics-port
+      interval: 60s

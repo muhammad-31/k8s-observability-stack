@@ -5,7 +5,7 @@
 #   page / critical -> PagerDuty + #incidents
 #   ticket / warning -> #alerts
 #   Watchdog -> dead man's switch (alerts if Alertmanager itself stops sending)
-#   info -> dropped unless something else is firing for the same namespace
+#   info -> dropped (visible in Prometheus and Grafana only)
 global:
   resolve_timeout: 5m
 
@@ -48,9 +48,6 @@ inhibit_rules:
   - source_matchers: ['alertname = "ErrorBudgetBurnFast"']
     target_matchers: ['alertname = "ErrorBudgetBurnSlow"']
     equal: [namespace, job]
-  - source_matchers: ['alertname = "InfoInhibitor"']
-    target_matchers: ['severity = "info"']
-    equal: [namespace]
 
 receivers:
   - name: blackhole

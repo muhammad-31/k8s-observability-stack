@@ -8,6 +8,7 @@ resources:
   - rules/slo-availability.yaml
   - rules/platform.yaml
   - monitors/podinfo.yaml
+  - monitors/platform.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

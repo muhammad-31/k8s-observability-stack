@@ -99,7 +99,7 @@ make validate
 ├── alertmanager/           # routing config (no credentials)
 ├── alloy/config.alloy      # log pipeline
 ├── dashboards/             # generated Grafana JSON (SLO overview, workload overview)
-├── monitors/               # PodMonitor for the sample app
+├── monitors/               # PodMonitors: the sample app and the platform components
 ├── runbooks/               # one page per alert, linked from the alert itself
 ├── argocd/                 # ApplicationSet + config Application, dev and prod
 ├── examples/               # ExternalSecret manifests for the two required Secrets
@@ -136,8 +136,9 @@ make grafana   # http://localhost:3000; dashboards are in the "SLOs" and "Kubern
 
 The [GitOps platform repo](https://github.com/muhammad-31/gitops-argocd-platform)
 runs podinfo, cert-manager, Kyverno and Argo CD. This stack scrapes podinfo
-through `monitors/podinfo.yaml`, and the platform alerts above cover the other
-three. To deploy it from that repo's Argo CD, add this repository and the three
+through `monitors/podinfo.yaml` and the other three through
+`monitors/platform.yaml`, which feed the platform alerts above. To deploy it
+from that repo's Argo CD, add this repository and the three
 chart repositories to its `platform` AppProject and allow the `monitoring`
 namespace.
 

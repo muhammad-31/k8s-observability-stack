@@ -25,4 +25,8 @@ alertmanager:
     replicas: 3
 
 grafana:
-  replicas: 2
+  # Users, sessions and annotations live in Grafana's SQLite database on each
+  # pod, so a second replica would show different state. Scale out only with
+  # a shared database (grafana.ini [database]). Dashboards are provisioned
+  # from ConfigMaps, so a restart loses nothing important.
+  replicas: 1
